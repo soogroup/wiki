@@ -46,38 +46,65 @@
 
 ---
 
-## 2. Validate 워크플로우 (Wiki 검증) — 필수 단계
+## 2. Validate 워크플로우 (Wiki 검증) — 필수 순차 단계
 
 ### 목표
-Ingest한 Wiki 항목들이 정확한지 검증하기.
+Ingest한 Wiki 항목들이 정확한지 **순서대로** 검증하고 배포하기.
 
-**검증 단계**: Ingest 완료 → 기계 검증 → 컨텐츠 검증 → 배포
+### ⚠️ 중요: 순서 준수 필수
 
-### 2-1. 기계 검증 (자동 스크립트)
+**반드시 이 순서대로 진행해야 합니다**:
 
-**스크립트 위치**: `.claude/scripts/validate-wiki.py`
+```
+Step 1: Ingest 완료
+   ↓ (기계 검증까지 완료되어야 다음 진행)
+Step 2: 기계 검증 (validate-wiki.py)
+   오류 0개 확인 ✅
+   ↓ (컨텐츠 검증 완료되어야 배포)
+Step 3: 컨텐츠 검증 (/review-wiki-content)
+   FAIL 0개 확인 ✅
+   ↓
+Step 4: 배포 (git commit & push)
+```
 
-**실행 방법**:
+**중요**: 각 단계가 완료되지 않으면 다음 단계 진행 금지
+
+---
+
+## 2-1. Step 1 → Step 2: 기계 검증 (자동 스크립트)
+
+**목표**: Frontmatter, 스키마, 파일명 자동 검증
+
+**실행 명령**:
 ```bash
 python .claude/scripts/validate-wiki.py wiki/
 ```
 
-**검증 항목**:
-- Frontmatter 필드 (필수 필드 완비)
-- 스키마 검증 (타입, 상태 유효성)
-- 파일명 규칙 (영역-YYYY-MM-DD-설명 형식)
+**검증 항목** (3가지):
+1. **Frontmatter 필드**: 필수 필드 완비 (타입, 출처, 상태 등)
+2. **스키마 검증**: 타입/상태 유효성 (decision/pending/action/rejected)
+3. **파일명 규칙**: 영역-YYYY-MM-DD-설명 형식
 
-**결과**:
+**실행 결과**:
 ```
-✅ 모두 통과 → 다음 단계로
-❌ 오류 있음 → Wiki 파일 수정 후 재실행
+✅ 오류 0개 → Step 3 진행 가능
+❌ 오류 N개 → Wiki 파일 수정 → 재실행 (오류 0개까지)
 ```
 
-### 2-2. 컨텐츠 검증 (LLM 스킬)
+**⚠️ 중요**: 
+- 오류가 있으면 **반드시 수정**하고 재검증
+- 오류 0개 확인 후에만 Step 3 진행
+- 검증 결과를 wiki/log.md에 기록
 
-**스킬 위치**: `.claude/skills/review-wiki-content/SKILL.md`
+---
 
-**사용 방법**:
+## 2-2. Step 2 → Step 3: 컨텐츠 검증 (LLM 스킬)
+
+**목표**: Wiki가 회의록과 정확하게 일치하는지 LLM 검증
+
+**전제 조건**: Step 2 기계 검증이 오류 0개 완료되어야 함
+
+**실행 명령**:
 ```
 /review-wiki-content를 사용해줄래
 경로: raw-sources/회의록/YYYY-MM-DD-주제.md
@@ -93,59 +120,166 @@ python .claude/scripts/validate-wiki.py wiki/
 | 4 | 액션 추적 | 상태 & 생명주기 정확한가? |
 | 5 | 참조 정확성 | Cross-reference 유효한가? |
 
-**결과 해석**:
-- ✅ **PASS**: 문제 없음, 배포 준비 완료
-- ⚠️ **WARNING**: 경미한 문제, 선택적 개선
-- ❌ **FAIL**: 심각한 문제, 수정 필수
+**실행 결과 해석**:
+- ✅ **PASS**: 문제 없음 (배포 준비 완료)
+- ⚠️ **WARNING**: 경미한 문제 (선택적 개선)
+- ❌ **FAIL**: 심각한 문제 (수정 필수)
 
-### 검증 단계 규칙
+**⚠️ 중요**:
+- FAIL 항목이 있으면 **반드시 수정**하고 재검증
+- FAIL 0개, WARNING 해결 후에만 Step 4 배포 진행
+- 검증 결과를 wiki/log.md에 기록
 
-#### ✅ DO (검증 단계에서 꼭 해야 할 것)
+---
 
-**DO#6: Ingest 직후 기계 검증 필수**
-- Ingest가 끝나면 즉시 validate-wiki.py 실행
-- 오류가 있으면 Wiki 파일 수정 후 재실행
-- 오류 0개 상태에서만 다음 단계 진행
-- **Why**: Frontmatter 오류는 쿼리 실패를 초래 → 데이터 무결성 보장
-- **How to apply**: 모든 Ingest 후 `python .claude/scripts/validate-wiki.py wiki/` 필수
+## 2-3. Step 3 → Step 4: 배포 (git commit & push)
 
-**DO#7: 기계 검증 통과 후 컨텐츠 검증 실시**
-- 기계 검증 오류 0개 → 컨텐츠 검증 (LLM) 실행
-- 회의록과 Wiki 항목 비교하여 5가지 항목 검증
-- FAIL 항목이 있으면 수정 후 재검증
-- **Why**: 데이터 정확성 보장 → 신뢰성 있는 SSOT 유지
-- **How to apply**: `/review-wiki-content` 스킬 사용
+**전제 조건**: 
+- Step 2 기계 검증 완료 (오류 0개) ✅
+- Step 3 컨텐츠 검증 완료 (FAIL 0개) ✅
 
-**DO#8: 배포 전 검증 상태 확인**
-- 기계 검증: 오류 0개 ✅
-- 컨텐츠 검증: FAIL 0개 ✅
-- 두 검증 모두 통과 후에만 배포
-- **Why**: 미검증 데이터는 SSOT 신뢰도 하락
-- **How to apply**: wiki/log.md에 검증 결과 기록
+**배포 절차**:
 
-#### ❌ DON'T (검증 단계에서 하면 안 될 것)
+```bash
+# 1. wiki/log.md에 검증 결과 기록
+# (기계 검증 + 컨텐츠 검증 결과)
 
-**DON'T#8: 검증 없이 Wiki 배포하기**
-- Ingest 후 검증 단계를 건너뛰지 않기
-- 기계 검증 실행 없이 커밋하지 않기
-- **Why**: 검증 없는 데이터 → 신뢰할 수 없는 SSOT
-- **How to apply**: 항상 validate-wiki.py 실행 후 진행
+# 2. 커밋
+git add wiki/
+git commit -m "Ingest & validate: YYYY-MM-DD meeting
+
+Machine validation: ✅ errors 0
+Content validation: ✅ FAIL 0
+Status: Ready for deployment"
+
+# 3. 푸시
+git push origin master
+```
+
+---
+
+## 2-4. 검증 단계 규칙 (DO & DON'T)
+
+### ✅ DO (검증 단계에서 꼭 해야 할 것)
+
+**DO#6: Ingest 직후 즉시 기계 검증 실행**
+
+**규칙**:
+```
+1. Ingest 완료 (ingest-meeting-minutes 스킬)
+2. 즉시 기계 검증 실행
+   python .claude/scripts/validate-wiki.py wiki/
+3. 오류 0개 확인
+4. 오류 0개 상태에서만 Step 3 진행
+```
+
+**위반 시 문제**:
+- 기계 검증 생략 → Frontmatter 오류 미발견
+- Query 실패, 자동화 불가능 → SSOT 신뢰도 하락
+
+---
+
+**DO#7: 기계 검증 통과 후 즉시 컨텐츠 검증 실행**
+
+**규칙**:
+```
+1. 기계 검증 오류 0개 확인
+2. 즉시 컨텐츠 검증 실행
+   /review-wiki-content 스킬 사용
+3. FAIL 0개 확인
+4. FAIL 0개 상태에서만 Step 4 배포
+```
+
+**위반 시 문제**:
+- 컨텐츠 검증 생략 → 할루시네이션, 누락 미발견
+- 신뢰할 수 없는 Wiki → SSOT 의미 상실
+
+---
+
+**DO#8: 검증 결과를 wiki/log.md에 기록**
+
+**규칙**:
+```
+모든 Ingest 후:
+1. 기계 검증 결과 기록
+   - 오류 개수
+   - 경고 사항
+2. 컨텐츠 검증 결과 기록
+   - 각 항목별 PASS/WARNING/FAIL
+   - 최종 상태 (배포 준비 완료/재검증 필요)
+3. 검증 완료 후 배포
+```
+
+---
+
+### ❌ DON'T (검증 단계에서 하면 안 될 것)
+
+**DON'T#8: 기계 검증 생략하고 배포**
+
+**금지 사항**:
+```
+❌ Ingest 완료 → 바로 git commit/push
+❌ 검증 스크립트 실행 안 함
+❌ "어차피 작동할 것 같으니" 배포
+```
+
+**반드시**:
+```
+✅ Ingest 완료 → python .claude/scripts/validate-wiki.py wiki/
+✅ 오류 0개 확인 → Step 3 진행
+```
+
+---
 
 **DON'T#9: 기계 검증만 하고 컨텐츠 검증 생략**
-- 기계 검증 통과 ≠ 컨텐츠 정확성 보장
-- Frontmatter가 맞아도 내용은 잘못될 수 있음
-- 반드시 두 검증 모두 실행
-- **Why**: 할루시네이션, 누락 감지는 LLM만 가능
-- **How to apply**: 기계 검증 후 항상 `/review-wiki-content` 스킬 사용
 
-**DON'T#10: 검증 오류를 무시하고 진행**
-- 기계 검증 오류가 있으면 수정 필수
-- 컨텐츠 검증 FAIL이 있으면 수정 필수
-- "나중에 수정할게"라는 태도 금지
-- **Why**: 미처리 오류 → 데이터 품질 악화
-- **How to apply**: 오류 발견 즉시 수정 & 재검증
+**금지 사항**:
+```
+❌ 기계 검증 통과 → 바로 배포
+❌ "Frontmatter가 맞으니 컨텐츠도 맞을 것"
+❌ 컨텐츠 검증 스킬 실행 안 함
+```
 
-### 검증 워크플로우 (통합)
+**반드시**:
+```
+✅ 기계 검증 오류 0개 → /review-wiki-content 스킬 실행
+✅ FAIL 0개 확인 → Step 4 배포
+```
+
+---
+
+**DON'T#10: 검증 오류/FAIL을 무시하고 배포**
+
+**금지 사항**:
+```
+❌ 기계 검증 오류 3개 → "나중에 고칠게" 배포
+❌ 컨텐츠 검증 FAIL 2개 → "아직 괜찮을 것 같은데" 배포
+❌ WARNING 항목 → "선택사항이니" 무시
+```
+
+**반드시**:
+```
+✅ 오류/FAIL 발견 → 즉시 Wiki 파일 수정
+✅ 수정 후 재검증 (오류/FAIL 0개까지)
+✅ 0개 확인 후에만 배포
+```
+
+**오류 처리 프로세스**:
+```
+오류/FAIL 발견
+    ↓
+Wiki 파일 수정
+    ↓
+검증 스크립트 재실행
+    ↓
+오류/FAIL 0개 확인
+    ↓
+배포 진행
+```
+
+---
+
+## 2-5. 검증 워크플로우 (순차 실행)
 
 ```
 Ingest 완료
