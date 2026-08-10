@@ -1,0 +1,22 @@
+# Temporary files
+temp_*.txt
+*.tmp
+
+# Output files
+output.json
+meeting_minutes.json
+
+# Node modules
+node_modules/
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
